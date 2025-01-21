@@ -2,37 +2,73 @@ use crate::api::client::TweetyClient;
 use crate::api::error::TweetyError;
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
-use serde_qs::to_string as convert_query_to_string;
+use yaup::to_string as convert_query_to_string;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub struct QueryParams {
-    pub end_time: Option<String>,               // ISO 8601 date string
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_time: Option<String>, // ISO 8601 date string
+
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub expansions: Option<Vec<ExpansionType>>, // List of enum values
-    pub max_results: Option<u32>,               // Integer for max results, min 5, max 100
-    pub media_fields: Option<Vec<MediaField>>,  // List of enum values
-    pub pagination_token: Option<String>,       // String for pagination token
-    pub place_fields: Option<Vec<PlaceField>>,  // List of enum values
-    pub poll_fields: Option<Vec<PollField>>,    // List of enum values
-    pub since_id: Option<String>,               // String for since_id (Tweet ID)
-    pub start_time: Option<String>,             // ISO 8601 date string
-    pub tweet_fields: Option<Vec<TweetField>>,  // List of enum values
-    pub until_id: Option<String>,               // String for until_id (Tweet ID)
-    pub user_fields: Option<Vec<UserField>>,    // List of enum values
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_results: Option<u32>, // Integer for max results, min 5, max 100
+
+    #[serde(skip_serializing_if = "Option::is_none", rename = "media.fields")]
+    pub media_fields: Option<Vec<MediaField>>, // List of enum values
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pagination_token: Option<String>, // String for pagination token
+
+    #[serde(skip_serializing_if = "Option::is_none", rename = "place.fields")]
+    pub place_fields: Option<Vec<PlaceField>>, // List of enum values
+
+    #[serde(skip_serializing_if = "Option::is_none", rename = "poll.fields")]
+    pub poll_fields: Option<Vec<PollField>>, // List of enum values
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub since_id: Option<String>, // String for since_id (Tweet ID)
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_time: Option<String>, // ISO 8601 date string
+
+    #[serde(skip_serializing_if = "Option::is_none", rename = "tweet.fields")]
+    pub tweet_fields: Option<Vec<TweetField>>, // List of enum values
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub until_id: Option<String>, // String for until_id (Tweet ID)
+
+    #[serde(skip_serializing_if = "Option::is_none", rename = "user.fields")]
+    pub user_fields: Option<Vec<UserField>>, // List of enum values
 }
 
 // Enum for the `expansions` parameter
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ExpansionType {
-    AttachmentsPollIds,
+    #[serde(rename = "article.cover_media")]
+    ArticleCoverMedia,
+    #[serde(rename = "article.media_entities")]
+    ArticleMediaEntities,
+    #[serde(rename = "attachments.media_keys")]
     AttachmentsMediaKeys,
+    #[serde(rename = "attachments.media_source_tweet")]
+    AttachmentsMediaSourceTweet,
+    #[serde(rename = "attachments.poll_ids")]
+    AttachmentsPollIds,
     AuthorId,
     EditHistoryTweetIds,
+    #[serde(rename = "entities.mentions.username")]
     EntitiesMentionsUsername,
+    #[serde(rename = "geo.place_id")]
     GeoPlaceId,
     InReplyToUserId,
+    #[serde(rename = "entities.note.mentions.username")]
+    EntitiesNoteMentionsUsername,
     ReferencedTweetsId,
+    #[serde(rename = "referenced_tweets.id.author_id")]
     ReferencedTweetsIdAuthorId,
 }
 
@@ -140,12 +176,21 @@ pub struct MentionsResponse {
 // Struct for each Tweet in "data"
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TweetData {
-    pub author_id: String,                   // Required field for author ID
-    pub text: String,                        // Required field for tweet text
-    pub lang: String,                        // Required field for language
-    pub conversation_id: String,             // Required field for conversation ID
+    pub id: String,                                      // Required field for tweet ID
     pub edit_history_tweet_ids: Vec<String>, // Required field for edit history tweet IDs
-    pub id: String,                          // Required field for tweet ID
+    pub text: String,                        // Required field for tweet text
+    pub author_id: Option<String>,           // Optional field for author ID
+    pub lang: Option<String>,                // Optional field for language
+    pub conversation_id: Option<String>,     // Optional field for conversation ID
+    pub in_reply_to_user_id: Option<String>, // Optional field for in reply to user ID
+    pub referenced_tweets: Option<Vec<ReferencedTweet>>, // Optional field for referenced tweets
+}
+
+// Struct for "referenced_tweets"
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReferencedTweet {
+    pub id: String,     // Required field for referenced tweet ID
+    pub r#type: String, // Required field for referenced tweet type
 }
 
 // Struct for "includes"
@@ -242,9 +287,10 @@ impl TweetyClient {
         query_params: Option<QueryParams>,
     ) -> Result<MentionsResponse, TweetyError> {
         let mut base_url = format!("https://api.x.com/2/users/{}/mentions", user_id);
-        if let Some(queries) = query_params {
-            let query_params = convert_query_to_string(&queries).unwrap();
-            base_url = format!("{}?{}", base_url, query_params);
+        if let Some(query) = query_params {
+            let query_params = convert_query_to_string(&query)
+                .map_err(|e| TweetyError::SerializeError(e.to_string()))?;
+            base_url = format!("{}{}", base_url, query_params);
         }
         match self.send_request::<()>(&base_url, Method::GET, None).await {
             Ok(value) => match serde_json::from_value::<MentionsResponse>(value) {

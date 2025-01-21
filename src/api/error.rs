@@ -19,6 +19,8 @@ pub enum TweetyError {
     UrlParseError(ParseError),
     #[error("Twitter consumer credentials are missing. Please set the 'consumer_key', 'consumer_secret', 'access_token', and 'access_token_secret' in your configuration:")]
     MissingCredentials,
+    #[error("Failed to serialize query: {0}")]
+    SerializeError(String),
 }
 
 impl From<reqwest::Error> for TweetyError {

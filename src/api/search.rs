@@ -3,9 +3,9 @@ use crate::api::error::TweetyError;
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use serde_qs::to_string as query_string;
+use yaup::to_string as convert_query_to_string;
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Default)]
 pub struct QueryParams {
     // Required parameter
     pub query: String,
@@ -20,16 +20,16 @@ pub struct QueryParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_results: Option<u8>, // Integer between 10 and 100
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", rename = "media.fields")]
     pub media_fields: Option<Vec<MediaField>>, // List of media fields
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub next_token: Option<String>, // String token for pagination
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", rename = "place.fields")]
     pub place_fields: Option<Vec<PlaceField>>, // List of place fields
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", rename = "poll.fields")]
     pub poll_fields: Option<Vec<PollField>>, // List of poll fields
 
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -41,13 +41,13 @@ pub struct QueryParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub start_time: Option<String>, // ISO 8601 date string
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", rename = "tweet.fields")]
     pub tweet_fields: Option<Vec<TweetField>>, // List of tweet fields
 
     #[serde(skip_serializing_if = "Option::is_none")]
     pub until_id: Option<String>, // String for tweet ID
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", rename = "user.fields")]
     pub user_fields: Option<Vec<UserField>>, // List of user fields
 }
 
@@ -230,8 +230,10 @@ pub enum UserField {
 }
 
 impl QueryParams {
-    pub fn to_query_string(&self) -> String {
-        query_string(self).unwrap()
+    pub fn to_query_string(&self) -> Result<String, TweetyError> {
+        let query_params = convert_query_to_string(&self)
+            .map_err(|e| TweetyError::SerializeError(e.to_string()))?;
+        Ok(query_params)
     }
 }
 
@@ -319,8 +321,8 @@ impl TweetyClient {
     ) -> Result<RecentSearchResponse, TweetyError> {
         let mut base_url = format!("https://api.x.com/2/tweets/search/recent?query={}", query);
 
-        if let Some(value) = query_params {
-            base_url = format!("{}&{}", base_url, value.to_query_string());
+        if let Some(query) = query_params {
+            base_url = format!("{}{}", base_url, query.to_query_string()?);
         }
 
         match self.send_request::<()>(&base_url, Method::GET, None).await {
@@ -349,7 +351,7 @@ impl TweetyClient {
         let mut base_url = format!("https://api.x.com/2/tweets/search/all?query={}", query);
 
         if let Some(queries) = query_params {
-            base_url = format!("{}&{}", base_url, queries.to_query_string());
+            base_url = format!("{}&{}", base_url, queries.to_query_string()?);
         }
 
         match self.send_request::<()>(&base_url, Method::GET, None).await {

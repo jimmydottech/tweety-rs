@@ -1,10 +1,14 @@
 use crate::api::client::TweetyClient;
 use crate::api::error::TweetyError;
+use crate::api::mentions::{
+    ExpansionType, MediaField, PlaceField, PollField, TweetData, TweetField, UserField,
+};
 use crate::types::tweet::PostTweetParams;
 use reqwest::Method;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt;
+use yaup::to_string as convert_query_to_string;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TweetRequest {
@@ -42,6 +46,35 @@ impl fmt::Display for Ids {
     }
 }
 
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub struct QueryParams {
+    #[serde(skip_serializing_if = "Option::is_none", rename = "tweet.fields")]
+    pub tweet_fields: Option<Vec<TweetField>>, // List of enum values
+
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expansions: Option<Vec<ExpansionType>>, // List of enum values
+
+    #[serde(skip_serializing_if = "Option::is_none", rename = "media.fields")]
+    pub media_fields: Option<Vec<MediaField>>, // List of enum values
+
+    #[serde(skip_serializing_if = "Option::is_none", rename = "poll.fields")]
+    pub poll_fields: Option<Vec<PollField>>, // List of enum values
+
+    #[serde(skip_serializing_if = "Option::is_none", rename = "user.fields")]
+    pub user_fields: Option<Vec<UserField>>, // List of enum values
+
+    #[serde(skip_serializing_if = "Option::is_none", rename = "place.fields")]
+    pub place_fields: Option<Vec<PlaceField>>, // List of enum values
+}
+
+// Root Response Struct
+#[derive(Debug, Serialize, Deserialize)]
+pub struct LookupResponse {
+    pub data: TweetData,
+    // TODO: impl includes field
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PostTweetResponseData {
     pub data: TweetResponse,
@@ -72,6 +105,31 @@ impl TweetyClient {
         let base_url = format!("https://api.x.com/2/tweets/{}", tweet_id);
 
         self.send_request::<()>(&base_url, Method::GET, None).await
+    }
+
+    /// GET /2/tweets/:id
+    /// Returns a variety of information about a single Tweet specified by the requested ID.
+    /// [Docs](https://developer.x.com/en/docs/x-api/tweets/lookup/api-reference/get-tweets-id)
+    pub async fn get_tweet_info_with_params(
+        &self,
+        tweet_id: &str,
+        params: Option<QueryParams>,
+    ) -> Result<LookupResponse, TweetyError> {
+        let mut base_url = format!("https://api.x.com/2/tweets/{}", tweet_id);
+
+        if let Some(query) = params {
+            let query_params = convert_query_to_string(&query)
+                .map_err(|e| TweetyError::SerializeError(e.to_string()))?;
+            base_url = format!("{}{}", base_url, query_params);
+        }
+
+        match self.send_request::<()>(&base_url, Method::GET, None).await {
+            Ok(value) => match serde_json::from_value::<LookupResponse>(value) {
+                Ok(data) => Ok(data),
+                Err(err) => Err(TweetyError::JsonParseError(err.to_string())),
+            },
+            Err(err) => Err(TweetyError::ApiError(err.to_string())),
+        }
     }
 
     /// SEND tweet message, Media id is optional for attaching tweets with an image
